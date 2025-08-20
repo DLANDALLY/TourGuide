@@ -7,14 +7,8 @@ import com.openclassrooms.tourguide.user.UserReward;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -32,11 +26,12 @@ import tripPricer.TripPricer;
 
 @Service
 public class TourGuideService {
-	private Logger logger = LoggerFactory.getLogger(TourGuideService.class);
+	private final Logger logger = LoggerFactory.getLogger(TourGuideService.class);
 	private final GpsUtil gpsUtil;
 	private final RewardsService rewardsService;
 	private final TripPricer tripPricer = new TripPricer();
 	public final Tracker tracker;
+	private final static int LIMIT_ATTRACTIONS = 5;
 	boolean testMode = true;
 
 	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
@@ -60,9 +55,8 @@ public class TourGuideService {
 	}
 
 	public VisitedLocation getUserLocation(User user) {
-		VisitedLocation visitedLocation = (user.getVisitedLocations().size() > 0) ? user.getLastVisitedLocation()
-				: trackUserLocation(user);
-		return visitedLocation;
+        return (!user.getVisitedLocations().isEmpty()) ? user.getLastVisitedLocation()
+                : trackUserLocation(user);
 	}
 
 	public User getUser(String userName) {
@@ -70,7 +64,7 @@ public class TourGuideService {
 	}
 
 	public List<User> getAllUsers() {
-		return internalUserMap.values().stream().collect(Collectors.toList());
+		return new ArrayList<>(internalUserMap.values());
 	}
 
 	public void addUser(User user) {
@@ -81,11 +75,17 @@ public class TourGuideService {
 
 	public List<Provider> getTripDeals(User user) {
 		int cumulatativeRewardPoints = user.getUserRewards().stream().mapToInt(i -> i.getRewardPoints()).sum();
-		List<Provider> providers = tripPricer.getPrice(tripPricerApiKey, user.getUserId(),
-				user.getUserPreferences().getNumberOfAdults(), user.getUserPreferences().getNumberOfChildren(),
-				user.getUserPreferences().getTripDuration(), cumulatativeRewardPoints);
+		List<Provider> providers = getTripPricer(user, cumulatativeRewardPoints);
+		providers.addAll(getTripPricer(user, cumulatativeRewardPoints));
+
 		user.setTripDeals(providers);
 		return providers;
+	}
+
+	private List<Provider> getTripPricer(User user, int cumulatativeRewardPoints){
+		return tripPricer.getPrice(tripPricerApiKey, user.getUserId(),
+				user.getUserPreferences().getNumberOfAdults(), user.getUserPreferences().getNumberOfChildren(),
+				user.getUserPreferences().getTripDuration(), cumulatativeRewardPoints);
 	}
 
 	public VisitedLocation trackUserLocation(User user) {
@@ -96,14 +96,17 @@ public class TourGuideService {
 	}
 
 	public List<Attraction> getNearByAttractions(VisitedLocation visitedLocation) {
-		List<Attraction> nearbyAttractions = new ArrayList<>();
-		for (Attraction attraction : gpsUtil.getAttractions()) {
-			if (rewardsService.isWithinAttractionProximity(attraction, visitedLocation.location)) {
-				nearbyAttractions.add(attraction);
-			}
-		}
+        List<Attraction> sortAttractionsByDistance = sortAttractionsByDistance(visitedLocation).stream()
+				.limit(LIMIT_ATTRACTIONS).toList();
+        return new ArrayList<>(sortAttractionsByDistance);
+	}
 
-		return nearbyAttractions;
+	public List<Attraction> sortAttractionsByDistance(VisitedLocation visitedLocation) {
+		return gpsUtil.getAttractions().stream()
+				.sorted(Comparator.comparingDouble(attraction ->
+						rewardsService.getDistance(attraction, visitedLocation.location)
+				))
+				.collect(Collectors.toList());
 	}
 
 	private void addShutDownHook() {
@@ -115,7 +118,7 @@ public class TourGuideService {
 	}
 
 	/**********************************************************************************
-	 * 
+	 *
 	 * Methods Below: For Internal Testing
 	 * 
 	 **********************************************************************************/
@@ -134,7 +137,7 @@ public class TourGuideService {
 
 			internalUserMap.put(userName, user);
 		});
-		logger.debug("Created " + InternalTestHelper.getInternalUserNumber() + " internal test users.");
+        logger.debug("Created {} internal test users.", InternalTestHelper.getInternalUserNumber());
 	}
 
 	private void generateUserLocationHistory(User user) {

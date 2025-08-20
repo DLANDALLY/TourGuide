@@ -69,10 +69,14 @@ public class User {
 		visitedLocations.clear();
 	}
 	
-	public void addUserReward(UserReward userReward) {
-		if(userRewards.stream().filter(r -> !r.attraction.attractionName.equals(userReward.attraction)).count() == 0) {
+	public synchronized void addUserReward(UserReward userReward) {
+		if(checkAttractionName(userReward))
 			userRewards.add(userReward);
-		}
+	}
+
+	private boolean checkAttractionName(UserReward userReward){
+		return userRewards.stream()
+				.noneMatch(r -> r.attraction.attractionName.equals(userReward.attraction.attractionName));
 	}
 	
 	public List<UserReward> getUserRewards() {
@@ -98,5 +102,4 @@ public class User {
 	public List<Provider> getTripDeals() {
 		return tripDeals;
 	}
-
 }
