@@ -2,8 +2,8 @@ package com.openclassrooms.tourguide.service;
 
 import com.openclassrooms.tourguide.helper.InternalTestHelper;
 import com.openclassrooms.tourguide.tracker.Tracker;
-import com.openclassrooms.tourguide.user.User;
-import com.openclassrooms.tourguide.user.UserReward;
+import com.openclassrooms.tourguide.model.User;
+import com.openclassrooms.tourguide.model.UserReward;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -32,21 +32,20 @@ public class TourGuideService {
 	private final TripPricer tripPricer = new TripPricer();
 	public final Tracker tracker;
 	private final static int LIMIT_ATTRACTIONS = 5;
-	boolean testMode = true;
+	// Executor pour le tracking parallèle contrôlé
+	private final ExecutorService executor = Executors.newFixedThreadPool(200);
+	private final ConcurrentHashMap<UUID, VisitedLocation> locationCache = new ConcurrentHashMap<>();
 
 	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
 		this.gpsUtil = gpsUtil;
 		this.rewardsService = rewardsService;
-		
 		Locale.setDefault(Locale.US);
 
-		if (testMode) {
-			logger.info("TestMode enabled");
-			logger.debug("Initializing users");
-			initializeInternalUsers();
-			logger.debug("Finished initializing users");
-		}
-		tracker = new Tracker(this);
+        logger.info("TestMode enabled");
+        logger.debug("Initializing users");
+        initializeInternalUsers();
+        logger.debug("Finished initializing users");
+        tracker = new Tracker(this);
 		addShutDownHook();
 	}
 
@@ -54,9 +53,15 @@ public class TourGuideService {
 		return user.getUserRewards();
 	}
 
+	//Version Original
+//	public VisitedLocation getUserLocation(User user) {
+//        return (!user.getVisitedLocations().isEmpty()) ? user.getLastVisitedLocation()
+//                : trackUserLocation(user);
+//	}
+	//Nouvelle version version
 	public VisitedLocation getUserLocation(User user) {
-        return (!user.getVisitedLocations().isEmpty()) ? user.getLastVisitedLocation()
-                : trackUserLocation(user);
+		return (!user.getVisitedLocations().isEmpty()) ? user.getLastVisitedLocation()
+				: trackUserLocationWithCache(user);
 	}
 
 	public User getUser(String userName) {
@@ -74,7 +79,7 @@ public class TourGuideService {
 	}
 
 	public List<Provider> getTripDeals(User user) {
-		int cumulatativeRewardPoints = user.getUserRewards().stream().mapToInt(i -> i.getRewardPoints()).sum();
+		int cumulatativeRewardPoints = user.getUserRewards().stream().mapToInt(UserReward::getRewardPoints).sum();
 		List<Provider> providers = getTripPricer(user, cumulatativeRewardPoints);
 		providers.addAll(getTripPricer(user, cumulatativeRewardPoints));
 
@@ -88,11 +93,55 @@ public class TourGuideService {
 				user.getUserPreferences().getTripDuration(), cumulatativeRewardPoints);
 	}
 
-	public VisitedLocation trackUserLocation(User user) {
-		VisitedLocation visitedLocation = gpsUtil.getUserLocation(user.getUserId());
+//	public VisitedLocation trackUserLocation(User user) {
+//		VisitedLocation visitedLocation = this.gpsUtil.getUserLocation(user.getUserId());
+//		user.addToVisitedLocations(visitedLocation);
+//		//rewardsService.calculateRewards(user);
+//		rewardsService.calculateRewardsOriginal(user);
+//		return visitedLocation;
+//	}
+	//### Test
+	public void trackAllUsers(List<User> allUsers) throws ExecutionException, InterruptedException {
+		List<Future<?>> futures = new ArrayList<>();
+		for (User user : allUsers) {
+			futures.add(executor.submit(() -> trackUserLocationWithCache(user)));
+		}
+		// Attendre la fin de tous les tracking
+		for (Future<?> f : futures) {
+			f.get();
+		}
+	}
+	public void trackUser(User user) throws ExecutionException, InterruptedException {
+		List<Future<VisitedLocation>> futures = new ArrayList<>();
+		futures.add(executor.submit(() -> trackUserLocationWithCache(user)));
+
+		// Attendre la fin de tous les tracking
+		for (Future<VisitedLocation> f : futures) {
+			f.get();
+		}
+    }
+	// Version trackUserLocation avec cache
+	public VisitedLocation trackUserLocationWithCache(User user) {
+		UUID userId = user.getUserId();
+
+		// Vérifier si le cache contient une location récente
+		VisitedLocation visitedLocation = locationCache.get(userId);
+		if (visitedLocation == null || isCacheExpired(visitedLocation)) {
+			// Pas dans le cache ou expiré → appel GPS
+			visitedLocation = gpsUtil.getUserLocation(userId);
+			locationCache.put(userId, visitedLocation);
+		}
+		// Ajouter dans l'historique utilisateur
 		user.addToVisitedLocations(visitedLocation);
+		// Calculer les récompenses
 		rewardsService.calculateRewards(user);
 		return visitedLocation;
+	}
+	// Expiration simple : ici 1 minute
+	private boolean isCacheExpired(VisitedLocation visitedLocation) {
+		long now = System.currentTimeMillis();
+		long elapsed = now - visitedLocation.timeVisited.getTime();
+		return elapsed > TimeUnit.MINUTES.toMillis(1);
 	}
 
 	public List<Attraction> getNearByAttractions(VisitedLocation visitedLocation) {
@@ -111,9 +160,7 @@ public class TourGuideService {
 
 	private void addShutDownHook() {
 		Runtime.getRuntime().addShutdownHook(new Thread() {
-			public void run() {
-				tracker.stopTracking();
-			}
+			public void run() { tracker.stopTracking(); }
 		});
 	}
 

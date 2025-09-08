@@ -1,0 +1,47 @@
+name: ci-cd-tourguide
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: action/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Install GPSUtil dependency
+        run: mvn install:install-file -Dfile=TourGuide/libs/gpsUtil.jar -DgroupId=gpsUtil -DartifactId=gpsUtil -Dversion=1.0.0 -Dpackaging=jar
+
+      - name: Install RewardCentral dependency
+        run: mvn install:install-file -Dfile=TourGuide/libs/RewardCentral.jar -DgroupId=rewardCentral -DartifactId=rewardCentral -Dversion=1.0.0 -Dpackaging=jar
+
+      - name: Install TripPricer dependency
+        run: mvn install:install-file -Dfile=TourGuide/libs/TripPricer.jar -DgroupId=tripPricer -DartifactId=tripPricer -Dversion=1.0.0 -Dpackaging=jar
+
+      - name: Compile
+        run: mvn -B clean compile --file TourGuide/pom.xml
+
+      - name: Run tests
+        run: mvn -B test --file TourGuide/pom.xml
+
+      - name: Build with Maven
+        run: mvn -B package --file TourGuide/pom.xml -DskipTests
+
+      - name: Create staging directory
+        run: mkdir staging && cp TourGuide/target/*.jar staging
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Package
+          path: staging

@@ -1,7 +1,6 @@
 package com.openclassrooms.tourguide.tracker;
 
 import java.util.List;
-import java.util.Queue;
 import java.util.concurrent.*;
 
 import org.apache.commons.lang3.time.StopWatch;
@@ -9,7 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.openclassrooms.tourguide.service.TourGuideService;
-import com.openclassrooms.tourguide.user.User;
+import com.openclassrooms.tourguide.model.User;
 
 public class Tracker extends Thread {
 	private final Logger logger = LoggerFactory.getLogger(Tracker.class);
@@ -34,18 +33,25 @@ public class Tracker extends Thread {
 
 	@Override
 	public void run() {
+		List<User> users = getAllUsers();
 		StopWatch stopWatch = new StopWatch();
 		while (true) {
 			if (Thread.currentThread().isInterrupted() || stop) {
 				logger.debug("Tracker stopping");
 				break;
 			}
-
-			List<User> users = tourGuideService.getAllUsers();
+			//List<User> users = getAllUsers();
             logger.debug("Begin Tracker. Tracking {} users.", users.size());
 			stopWatch.start();
-			users.parallelStream().forEach(tourGuideService::trackUserLocation);
-			stopWatch.stop();
+
+			//users.parallelStream().forEach(tourGuideService::trackUserLocation);
+            try {
+                tourGuideService.trackAllUsers(users);
+            } catch (ExecutionException | InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            stopWatch.stop();
+
             logger.debug("Tracker Time Elapsed: {} seconds.", TimeUnit.MILLISECONDS.toSeconds(stopWatch.getTime()));
 			stopWatch.reset();
 			try {
@@ -55,6 +61,9 @@ public class Tracker extends Thread {
 				break;
 			}
 		}
+	}
 
+	private List<User> getAllUsers(){
+		return tourGuideService.getAllUsers();
 	}
 }
