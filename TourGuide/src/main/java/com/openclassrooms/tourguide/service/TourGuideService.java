@@ -32,9 +32,11 @@ public class TourGuideService {
 	private final TripPricer tripPricer = new TripPricer();
 	public final Tracker tracker;
 	private final static int LIMIT_ATTRACTIONS = 5;
-	// Executor pour le tracking parallèle contrôlé
 	private final ExecutorService executor = Executors.newFixedThreadPool(200);
 	private final ConcurrentHashMap<UUID, VisitedLocation> locationCache = new ConcurrentHashMap<>();
+
+	private static final String tripPricerApiKey = "test-server-api-key";
+	private final Map<String, User> internalUserMap = new HashMap<>();
 
 	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
 		this.gpsUtil = gpsUtil;
@@ -53,12 +55,6 @@ public class TourGuideService {
 		return user.getUserRewards();
 	}
 
-	//Version Original
-//	public VisitedLocation getUserLocation(User user) {
-//        return (!user.getVisitedLocations().isEmpty()) ? user.getLastVisitedLocation()
-//                : trackUserLocation(user);
-//	}
-	//Nouvelle version version
 	public VisitedLocation getUserLocation(User user) {
 		return (!user.getVisitedLocations().isEmpty()) ? user.getLastVisitedLocation()
 				: trackUserLocationWithCache(user);
@@ -93,55 +89,44 @@ public class TourGuideService {
 				user.getUserPreferences().getTripDuration(), cumulatativeRewardPoints);
 	}
 
-//	public VisitedLocation trackUserLocation(User user) {
-//		VisitedLocation visitedLocation = this.gpsUtil.getUserLocation(user.getUserId());
-//		user.addToVisitedLocations(visitedLocation);
-//		//rewardsService.calculateRewards(user);
-//		rewardsService.calculateRewardsOriginal(user);
-//		return visitedLocation;
-//	}
-	//### Test
+	/**
+	 * Lance le suivi de la localisation pour tous les utilisateurs en parallèle,
+	 * puis attend la fin de l'exécution de toutes les tâches avant de terminer.
+	 *
+	 * @param allUsers liste des utilisateurs à suivre
+	 * @throws ExecutionException    si une tâche échoue
+	 * @throws InterruptedException  si l'attente est interrompue
+	 */
 	public void trackAllUsers(List<User> allUsers) throws ExecutionException, InterruptedException {
 		List<Future<?>> futures = new ArrayList<>();
-		for (User user : allUsers) {
+		for (User user : allUsers) {// lance les taches en parallèle
 			futures.add(executor.submit(() -> trackUserLocationWithCache(user)));
 		}
-		// Attendre la fin de tous les tracking
-		for (Future<?> f : futures) {
+
+		for (Future<?> f : futures) {//attend la fin des tachzes
 			f.get();
 		}
 	}
-	public void trackUser(User user) throws ExecutionException, InterruptedException {
-		List<Future<VisitedLocation>> futures = new ArrayList<>();
-		futures.add(executor.submit(() -> trackUserLocationWithCache(user)));
 
-		// Attendre la fin de tous les tracking
-		for (Future<VisitedLocation> f : futures) {
-			f.get();
-		}
-    }
-	// Version trackUserLocation avec cache
 	public VisitedLocation trackUserLocationWithCache(User user) {
 		UUID userId = user.getUserId();
 
-		// Vérifier si le cache contient une location récente
-		VisitedLocation visitedLocation = locationCache.get(userId);
+		VisitedLocation visitedLocation = locationCache.get(userId);// Vérifie si le cache contient une location récente
 		if (visitedLocation == null || isCacheExpired(visitedLocation)) {
-			// Pas dans le cache ou expiré → appel GPS
-			visitedLocation = gpsUtil.getUserLocation(userId);
+
+			visitedLocation = gpsUtil.getUserLocation(userId);// Pas dans le cache ou expiré → appel GPS
 			locationCache.put(userId, visitedLocation);
 		}
-		// Ajouter dans l'historique utilisateur
-		user.addToVisitedLocations(visitedLocation);
-		// Calculer les récompenses
-		rewardsService.calculateRewards(user);
+
+		user.addToVisitedLocations(visitedLocation);// Ajout historique utilisateur
+		rewardsService.calculateRewards(user); // Calculer les récompenses
 		return visitedLocation;
 	}
-	// Expiration simple : ici 1 minute
+
 	private boolean isCacheExpired(VisitedLocation visitedLocation) {
 		long now = System.currentTimeMillis();
 		long elapsed = now - visitedLocation.timeVisited.getTime();
-		return elapsed > TimeUnit.MINUTES.toMillis(1);
+		return elapsed > TimeUnit.MINUTES.toMillis(1); // Expiration simple : ici 1 minute
 	}
 
 	public List<Attraction> getNearByAttractions(VisitedLocation visitedLocation) {
@@ -153,8 +138,7 @@ public class TourGuideService {
 	public List<Attraction> sortAttractionsByDistance(VisitedLocation visitedLocation) {
 		return gpsUtil.getAttractions().stream()
 				.sorted(Comparator.comparingDouble(attraction ->
-						rewardsService.getDistance(attraction, visitedLocation.location)
-				))
+						rewardsService.getDistance(attraction, visitedLocation.location)))
 				.collect(Collectors.toList());
 	}
 
@@ -163,16 +147,6 @@ public class TourGuideService {
 			public void run() { tracker.stopTracking(); }
 		});
 	}
-
-	/**********************************************************************************
-	 *
-	 * Methods Below: For Internal Testing
-	 * 
-	 **********************************************************************************/
-	private static final String tripPricerApiKey = "test-server-api-key";
-	// Database connection will be used for external users, but for testing purposes
-	// internal users are provided and stored in memory
-	private final Map<String, User> internalUserMap = new HashMap<>();
 
 	private void initializeInternalUsers() {
 		IntStream.range(0, InternalTestHelper.getInternalUserNumber()).forEach(i -> {
@@ -210,5 +184,4 @@ public class TourGuideService {
 		LocalDateTime localDateTime = LocalDateTime.now().minusDays(new Random().nextInt(30));
 		return Date.from(localDateTime.toInstant(ZoneOffset.UTC));
 	}
-
 }

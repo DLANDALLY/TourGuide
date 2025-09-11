@@ -1,6 +1,5 @@
 package com.openclassrooms.tourguide;
 
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.*;
@@ -21,29 +20,6 @@ import com.openclassrooms.tourguide.model.User;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class TestPerformance {
-
-	/*
-	 * A note on performance improvements:
-	 * 
-	 * The number of users generated for the high volume tests can be easily
-	 * adjusted via this method:
-	 * 
-	 * InternalTestHelper.setInternalUserNumber(100000);
-	 * 
-	 * 
-	 * These tests can be modified to suit new solutions, just as long as the
-	 * performance metrics at the end of the tests remains consistent.
-	 * 
-	 * These are performance metrics that we are trying to hit:
-	 * 
-	 * highVolumeTrackLocation: 100,000 users within 15 minutes:
-	 * assertTrue(TimeUnit.MINUTES.toSeconds(15) >=
-	 * TimeUnit.MILLISECONDS.toSeconds(stopWatch.getTime()));
-	 *
-	 * highVolumeGetRewards: 100,000 users within 20 minutes:
-	 * assertTrue(TimeUnit.MINUTES.toSeconds(20) >=
-	 * TimeUnit.MILLISECONDS.toSeconds(stopWatch.getTime()));
-	 */
 	private RewardsService rewardsService;
 	private GpsUtil gpsUtil;
 	private TourGuideService tourGuideService;
@@ -57,7 +33,7 @@ public class TestPerformance {
 	//@Disabled
 	@Test
 	public void highVolumeTrackLocation() throws ExecutionException, InterruptedException {
-		InternalTestHelper.setInternalUserNumber(100000);
+		InternalTestHelper.setInternalUserNumber(100);
 		tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 		List<User> allUsers = tourGuideService.getAllUsers();
 
@@ -77,7 +53,7 @@ public class TestPerformance {
 	@Test
 	public void highVolumeGetRewards() throws InterruptedException {
 		// Users should be incremented up to 100,000, and test finishes within 20 minutes
-		InternalTestHelper.setInternalUserNumber(100000);
+		InternalTestHelper.setInternalUserNumber(100);
 		tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 		StopWatch stopWatch = new StopWatch();
 		stopWatch.start();

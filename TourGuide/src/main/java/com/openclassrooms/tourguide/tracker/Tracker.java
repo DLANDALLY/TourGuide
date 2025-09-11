@@ -40,11 +40,9 @@ public class Tracker extends Thread {
 				logger.debug("Tracker stopping");
 				break;
 			}
-			//List<User> users = getAllUsers();
             logger.debug("Begin Tracker. Tracking {} users.", users.size());
 			stopWatch.start();
 
-			//users.parallelStream().forEach(tourGuideService::trackUserLocation);
             try {
                 tourGuideService.trackAllUsers(users);
             } catch (ExecutionException | InterruptedException e) {
