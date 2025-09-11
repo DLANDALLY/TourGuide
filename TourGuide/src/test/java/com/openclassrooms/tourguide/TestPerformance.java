@@ -33,7 +33,7 @@ public class TestPerformance {
 	//@Disabled
 	@Test
 	public void highVolumeTrackLocation() throws ExecutionException, InterruptedException {
-		InternalTestHelper.setInternalUserNumber(100);
+		InternalTestHelper.setInternalUserNumber(100000);
 		tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 		List<User> allUsers = tourGuideService.getAllUsers();
 
@@ -53,7 +53,7 @@ public class TestPerformance {
 	@Test
 	public void highVolumeGetRewards() throws InterruptedException {
 		// Users should be incremented up to 100,000, and test finishes within 20 minutes
-		InternalTestHelper.setInternalUserNumber(100);
+		InternalTestHelper.setInternalUserNumber(100000);
 		tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 		StopWatch stopWatch = new StopWatch();
 		stopWatch.start();

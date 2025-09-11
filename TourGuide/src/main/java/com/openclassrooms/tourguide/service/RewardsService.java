@@ -38,21 +38,38 @@ public class RewardsService {
 		proximityBuffer = defaultProximityBuffer;
 	}
 
+	/**
+	 * Soumet une tâche asynchrone pour calculer les récompenses d'un utilisateur.
+	 * L'utilisation d'un sémaphore permet de limiter le nombre de calculs
+	 * exécutés en parallèle afin de ne pas surcharger le système
+	 * @param user calcule les récompenses de l'utilisateur
+	 */
 	public void calculateRewards(User user) {
 		try {
 			semaphore.acquire(); // bloque si trop de tâches en parallèle
 			executor.submit(() -> {
-				try {
-					processRewards(user);
-				} finally {
-					semaphore.release();
-				}
+				try { processRewards(user); }
+				finally { semaphore.release(); }
 			});
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 		}
 	}
 
+	/**
+	 * Calcule de manière asynchrone les récompenses d'un utilisateur
+	 * en fonction de ses visites et des attractions disponibles
+	 *
+	 * Pour chaque localisation visitée par l'utilisateur on recherche
+	 * les attractions proches. Lorsqu'une attraction correspond
+	 * un calcul de points est lancé de façon asynchrone puis
+	 * ajouté à la liste des récompenses de l'utilisateur
+	 *
+	 * L'exécution attend que l'ensemble des calculs de points
+	 * soient terminés avant de se terminer
+	 *
+	 * @param user l'utilisateur dont on veut traiter les récompenses
+	 */
 	private void processRewards(User user) {
 		List<VisitedLocation> userLocations = new CopyOnWriteArrayList<>(user.getVisitedLocations());
 		List<Attraction> attractions = getAttractions();
@@ -61,10 +78,9 @@ public class RewardsService {
 				.flatMap(visitedLocation ->
 						attractions.stream()
 								.filter(attraction -> checkAttractionName(user, attraction) && nearAttraction(visitedLocation, attraction))
-								.map(attraction ->
-										getRewardPointsAsync(attraction, user)
-												.thenAccept(rewardPoints ->
-														user.addUserReward(new UserReward(visitedLocation, attraction, rewardPoints)))
+								.map(attraction -> getRewardPointsAsync(attraction, user)
+										.thenAccept(rewardPoints ->
+												user.addUserReward(new UserReward(visitedLocation, attraction, rewardPoints)))
 								)
 				).toList();
 
@@ -97,19 +113,30 @@ public class RewardsService {
 	private boolean nearAttraction(VisitedLocation visitedLocation, Attraction attraction) {
 		return !(getDistance(attraction, visitedLocation.location) > proximityBuffer);
 	}
-	
-	private int getRewardPoints(Attraction attraction, User user) {
-		return rewardsCentral.getAttractionRewardPoints(attraction.attractionId, user.getUserId());
-	}
 
+	/**
+	 * Récupère de manière asynchrone les points de récompense pour une attraction donnée et un utilisateur.
+	 * Les résultats sont mis en cache afin d'éviter des appels redondants
+	 * Si la combinaison {@code (attraction, user)} existe déjà dans le cache, le calcul n'est pas relancé.
+	 *
+	 * @param attraction l'attraction pour laquelle calculer les points de récompense
+	 * @param user       l'utilisateur concerné par le calcul des points
+	 * @return un {@link CompletableFuture} fournissant le nombre de points de récompense associés
+	 */
 	private CompletableFuture<Integer> getRewardPointsAsync(Attraction attraction, User user) {
 		String key = attraction.attractionId + "-" + user.getUserId();
-		return rewardsCache.computeIfAbsent(key, k ->
-				CompletableFuture.supplyAsync(() ->
-						rewardsCentral.getAttractionRewardPoints(attraction.attractionId, user.getUserId()), executor)
+		return rewardsCache.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() ->
+				rewardsCentral.getAttractionRewardPoints(attraction.attractionId, user.getUserId()), executor)
 		);
 	}
 
+	/**
+	 * Calcule la distance en miles entre deux coordonnées géographiques.
+	 *
+	 * @param loc1 première localisation
+	 * @param loc2 deuxième localisation
+	 * @return la distance entre les deux points en miles
+	 */
 	public double getDistance(Location loc1, Location loc2) {
 		double lat1 = Math.toRadians(loc1.latitude);
 		double lon1 = Math.toRadians(loc1.longitude);
